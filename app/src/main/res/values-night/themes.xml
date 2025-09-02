@@ -1,0 +1,7 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Base.Theme.MensajeAutomatico" parent="Theme.Material3.DayNight.NoActionBar" />
+
+    <style name="Theme.MensajeAutomatico" parent="Base.Theme.MensajeAutomatico" />
+</resources>
+
+

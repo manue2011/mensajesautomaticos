@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- Incluir SharedPreferences para respaldar configuraciones del usuario -->
+        <include domain="sharedpref" />
+        <!-- Excluir archivos temporales y caché -->
+        <exclude domain="file" />
+        <exclude domain="external" />
+        <exclude domain="database" />
+    </cloud-backup>
+    <device-transfer>
+        <!-- Incluir SharedPreferences para transferencia entre dispositivos -->
+        <include domain="sharedpref" />
+        <!-- Excluir archivos temporales, caché y bases de datos -->
+        <exclude domain="file" />
+        <exclude domain="external" />
+        <exclude domain="database" />
+    </device-transfer>
+</data-extraction-rules>

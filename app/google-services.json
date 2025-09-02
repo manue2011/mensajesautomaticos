@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "718048970356",
+    "project_id": "mensajeautomatico-5b54c",
+    "storage_bucket": "mensajeautomatico-5b54c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:718048970356:android:02d9614de0dea57f3cf321",
+        "android_client_info": {
+          "package_name": "com.example.mensajeautomatico"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAN8rxqNIbUR9Pi_Kb4vgiNWD16eUvvpDI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

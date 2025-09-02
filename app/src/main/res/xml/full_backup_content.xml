@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Incluir SharedPreferences para respaldar configuraciones del usuario -->
+    <include domain="sharedpref" />
+    <!-- Excluir archivos temporales, caché y bases de datos -->
+    <exclude domain="file" />
+    <exclude domain="external" />
+    <exclude domain="database" />
+</full-backup-content>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:gravity="center">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Por favor, activa el servicio de accesibilidad para continuar."
+        android:textSize="18sp"
+        android:textAlignment="center"
+        android:paddingBottom="16dp" />
+
+    <Button
+        android:id="@+id/btn_activate_accessibility"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Activar Accesibilidad"
+        android:layout_marginBottom="16dp"/>
+
+    <Button
+        android:id="@+id/btn_check_again"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Verificar de nuevo" />
+
+</LinearLayout>
