@@ -11,18 +11,14 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Toast;
+
 import androidx.appcompat.app.AppCompatActivity;
+
 import android.view.accessibility.AccessibilityManager;
 import android.accessibilityservice.AccessibilityServiceInfo;
 
 import java.util.List;
 
-/**
- * Actividad principal que maneja el flujo de la aplicación.
- * 1. Verifica el estado de login.
- * 2. Si no está logueado, muestra la pantalla de login.
- * 3. Si está logueado, muestra la pantalla principal con opciones para activar accesibilidad, ver historial o programar mensajes.
- */
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "MainActivity";
@@ -105,7 +101,8 @@ public class MainActivity extends AppCompatActivity {
         });
 
         scheduleMessageButton.setOnClickListener(v -> {
-            // Navega a ScheduleMessageActivity (Programar Mensaje)
+            // Navega directamente a ScheduleMessageActivity
+            // No se necesitan permisos especiales para WhatsApp
             Intent intent = new Intent(MainActivity.this, ScheduleMessageActivity.class);
             startActivity(intent);
         });
@@ -116,7 +113,6 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        // Log para saber que onResume() ha sido llamado
         Log.d(TAG, "onResume() ha sido llamado.");
 
         // Solo ejecuta esta lógica si la vista actual es activity_main

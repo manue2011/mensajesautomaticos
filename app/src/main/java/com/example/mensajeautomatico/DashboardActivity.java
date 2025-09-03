@@ -10,8 +10,11 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Actividad que maneja el panel de control del usuario.
@@ -23,7 +26,8 @@ public class DashboardActivity extends AppCompatActivity {
     private RecyclerView recyclerViewHistorial;
     private TextView tvEmptyHistory;
     private MessageAdapter messageAdapter;
-    private List<Message> messageList = new ArrayList<>();  // Simula lista, integra DB después
+    private List<Message> messageList = new ArrayList<>();
+    private AppDatabase db;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -33,6 +37,9 @@ public class DashboardActivity extends AppCompatActivity {
         btnProgramarMensaje = findViewById(R.id.btn_programar_mensaje);
         recyclerViewHistorial = findViewById(R.id.recycler_view_historial);
         tvEmptyHistory = findViewById(R.id.tv_empty_history);
+
+        // Inicializar la base de datos
+        db = AppDatabase.getDatabase(this);
 
         // Configura RecyclerView
         recyclerViewHistorial.setLayoutManager(new LinearLayoutManager(this));
@@ -61,25 +68,26 @@ public class DashboardActivity extends AppCompatActivity {
      * Carga el historial de mensajes
      */
     private void loadMessageHistory() {
-        // Limpiar lista actual
-        messageList.clear();
+        new Thread(() -> {
+            List<MessageEntity> messages = db.messageDao().getAllMessages();
+            runOnUiThread(() -> {
+                messageList.clear();
+                for (MessageEntity entity : messages) {
+                    // Convertir Entity a Modelo
+                    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault());
+                    String timestamp = sdf.format(new Date(entity.scheduledTime));
+                    messageList.add(new Message(entity.phoneNumber, entity.messageText, timestamp, entity.status));
+                }
+                messageAdapter.notifyDataSetChanged();
 
-        // Aquí iría la lógica para cargar mensajes de la base de datos
-        // Por ahora, simulamos algunos mensajes
-        messageList.add(new Message("+123456789", "Mensaje de prueba 1", "2023-10-01 10:00", "Enviado"));
-        messageList.add(new Message("+987654321", "Mensaje de prueba 2", "2023-10-02 14:30", "Pendiente"));
-        messageList.add(new Message("+555555555", "Mensaje de prueba 3", "2023-10-03 09:15", "Enviado"));
-
-        // Actualizar el adaptador
-        messageAdapter.notifyDataSetChanged();
-
-        // Mostrar u ocultar mensaje de historial vacío
-        if (messageList.isEmpty()) {
-            tvEmptyHistory.setVisibility(View.VISIBLE);
-            recyclerViewHistorial.setVisibility(View.GONE);
-        } else {
-            tvEmptyHistory.setVisibility(View.GONE);
-            recyclerViewHistorial.setVisibility(View.VISIBLE);
-        }
+                if (messageList.isEmpty()) {
+                    tvEmptyHistory.setVisibility(View.VISIBLE);
+                    recyclerViewHistorial.setVisibility(View.GONE);
+                } else {
+                    tvEmptyHistory.setVisibility(View.GONE);
+                    recyclerViewHistorial.setVisibility(View.VISIBLE);
+                }
+            });
+        }).start();
     }
 }

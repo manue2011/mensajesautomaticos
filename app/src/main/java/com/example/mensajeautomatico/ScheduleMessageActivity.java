@@ -2,7 +2,6 @@ package com.example.mensajeautomatico;
 
 import android.app.DatePickerDialog;
 import android.app.TimePickerDialog;
-import android.content.Intent;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
@@ -13,8 +12,12 @@ import android.widget.TimePicker;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.work.Data;
+import androidx.work.OneTimeWorkRequest;
+import androidx.work.WorkManager;
 
 import java.util.Calendar;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Actividad para la programación de mensajes.
@@ -23,7 +26,6 @@ import java.util.Calendar;
  */
 public class ScheduleMessageActivity extends AppCompatActivity {
 
-    // Vistas del layout
     private EditText etPhoneNumber;
     private EditText etMessageText;
     private Button btnSelectDate;
@@ -32,7 +34,7 @@ public class ScheduleMessageActivity extends AppCompatActivity {
     private TextView tvSelectedTime;
     private Button btnSchedule;
 
-    // Variables para la fecha y hora seleccionadas
+    private AppDatabase db;
     private int selectedYear, selectedMonth, selectedDay;
     private int selectedHour, selectedMinute;
 
@@ -40,6 +42,9 @@ public class ScheduleMessageActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_schedule_message);
+
+        // Inicializar la base de datos
+        db = AppDatabase.getDatabase(this);
 
         // Inicializar vistas
         etPhoneNumber = findViewById(R.id.et_phone_number);
@@ -50,32 +55,11 @@ public class ScheduleMessageActivity extends AppCompatActivity {
         tvSelectedTime = findViewById(R.id.tv_selected_time);
         btnSchedule = findViewById(R.id.btn_schedule);
 
-        // Configurar listeners de clics
-        btnSelectDate.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                showDatePickerDialog();
-            }
-        });
-
-        btnSelectTime.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                showTimePickerDialog();
-            }
-        });
-
-        btnSchedule.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                scheduleMessage();
-            }
-        });
+        btnSelectDate.setOnClickListener(v -> showDatePickerDialog());
+        btnSelectTime.setOnClickListener(v -> showTimePickerDialog());
+        btnSchedule.setOnClickListener(v -> scheduleMessage());
     }
 
-    /**
-     * Muestra un diálogo de selección de fecha.
-     */
     private void showDatePickerDialog() {
         final Calendar c = Calendar.getInstance();
         int year = c.get(Calendar.YEAR);
@@ -83,51 +67,38 @@ public class ScheduleMessageActivity extends AppCompatActivity {
         int day = c.get(Calendar.DAY_OF_MONTH);
 
         DatePickerDialog datePickerDialog = new DatePickerDialog(this,
-                new DatePickerDialog.OnDateSetListener() {
-                    @Override
-                    public void onDateSet(DatePicker view, int year, int monthOfYear, int dayOfMonth) {
-                        selectedYear = year;
-                        selectedMonth = monthOfYear;
-                        selectedDay = dayOfMonth;
-                        tvSelectedDate.setText("Fecha: " + dayOfMonth + "/" + (monthOfYear + 1) + "/" + year);
-                    }
+                (view, year1, monthOfYear, dayOfMonth) -> {
+                    selectedYear = year1;
+                    selectedMonth = monthOfYear;
+                    selectedDay = dayOfMonth;
+                    tvSelectedDate.setText("Fecha: " + dayOfMonth + "/" + (monthOfYear + 1) + "/" + year1);
                 }, year, month, day);
         datePickerDialog.show();
     }
 
-    /**
-     * Muestra un diálogo de selección de hora.
-     */
     private void showTimePickerDialog() {
         final Calendar c = Calendar.getInstance();
         int hour = c.get(Calendar.HOUR_OF_DAY);
         int minute = c.get(Calendar.MINUTE);
 
         TimePickerDialog timePickerDialog = new TimePickerDialog(this,
-                new TimePickerDialog.OnTimeSetListener() {
-                    @Override
-                    public void onTimeSet(TimePicker view, int hourOfDay, int minute) {
-                        selectedHour = hourOfDay;
-                        selectedMinute = minute;
-                        tvSelectedTime.setText("Hora: " + hourOfDay + ":" + String.format("%02d", minute));
-                    }
-                }, hour, minute, false); // El último parámetro es para el formato de 24 horas
+                (view, hourOfDay, minute1) -> {
+                    selectedHour = hourOfDay;
+                    selectedMinute = minute1;
+                    tvSelectedTime.setText("Hora: " + hourOfDay + ":" + String.format("%02d", minute1));
+                }, hour, minute, true);
         timePickerDialog.show();
     }
 
-    /**
-     * Valida los campos y simula la programación del mensaje.
-     */
     private void scheduleMessage() {
         String phoneNumber = etPhoneNumber.getText().toString();
         String messageText = etMessageText.getText().toString();
 
-        if (phoneNumber.isEmpty() || messageText.isEmpty() || tvSelectedDate.getText().toString().isEmpty() || tvSelectedTime.getText().toString().isEmpty()) {
+        if (phoneNumber.isEmpty() || messageText.isEmpty()) {
             Toast.makeText(this, "Por favor, completa todos los campos.", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        // Validar fecha futura
         Calendar selectedTime = Calendar.getInstance();
         selectedTime.set(selectedYear, selectedMonth, selectedDay, selectedHour, selectedMinute);
         if (selectedTime.before(Calendar.getInstance())) {
@@ -135,13 +106,28 @@ public class ScheduleMessageActivity extends AppCompatActivity {
             return;
         }
 
-        // Simula programación (agrega WorkManager aquí más adelante)
-        String scheduledDateTime = tvSelectedDate.getText() + " a las " + tvSelectedTime.getText();
-        Toast.makeText(this, "Mensaje programado para: " + scheduledDateTime + " - Estado: Programado", Toast.LENGTH_LONG).show();
+        long scheduledTimeMillis = selectedTime.getTimeInMillis();
+        MessageEntity message = new MessageEntity(phoneNumber, messageText, scheduledTimeMillis, "Programado");
 
-        // Simula guardado en historial (integra DB después)
-        // Message newMessage = new Message(phoneNumber, messageText, scheduledDateTime + " - Programado");
-        // Guarda en DB y regresa a Dashboard si quieres
-        finish();  // Vuelve a la pantalla anterior (Dashboard o Main)
+        new Thread(() -> {
+            db.messageDao().insert(message);
+            Data inputData = new Data.Builder()
+                    .putString(MessageWorker.EXTRA_PHONE_NUMBER, phoneNumber)
+                    .putString(MessageWorker.EXTRA_MESSAGE_TEXT, messageText)
+                    .putInt(MessageWorker.EXTRA_MESSAGE_ID, (int) message.id)
+                    .build();
+
+            OneTimeWorkRequest messageWork = new OneTimeWorkRequest.Builder(MessageWorker.class)
+                    .setInputData(inputData)
+                    .setInitialDelay(scheduledTimeMillis - System.currentTimeMillis(), TimeUnit.MILLISECONDS)
+                    .build();
+
+            WorkManager.getInstance(this).enqueue(messageWork);
+
+            runOnUiThread(() -> {
+                Toast.makeText(this, "Mensaje programado correctamente.", Toast.LENGTH_SHORT).show();
+                finish();
+            });
+        }).start();
     }
 }

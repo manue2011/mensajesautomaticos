@@ -1,13 +1,14 @@
 package com.example.mensajeautomatico;
 
 /**
- * Clase de modelo de datos para representar un mensaje programado o enviado.
+ * Clase de modelo de datos para representar un mensaje en la UI.
+ * Diferente de MessageEntity que es para la base de datos.
  */
 public class Message {
     private String phoneNumber;
     private String messageText;
     private String timestamp;
-    private String status;  // Nuevo campo para estado
+    private String status;
 
     public Message(String phoneNumber, String messageText, String timestamp, String status) {
         this.phoneNumber = phoneNumber;

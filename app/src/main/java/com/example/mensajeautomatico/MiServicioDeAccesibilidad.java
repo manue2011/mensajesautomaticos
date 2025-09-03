@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.net.Uri;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -27,17 +28,25 @@ public class MiServicioDeAccesibilidad extends AccessibilityService {
     private static final String TAG = "MiServicioAccesibilidad";
     private String phoneNumber;
     private String messageText;
+    private int messageId;
     private AtomicBoolean isMessageScheduled = new AtomicBoolean(false);
     private Handler handler = new Handler(Looper.getMainLooper());
+
+    // Definir las constantes aquí si no están disponibles en MessageWorker
+    public static final String ACTION_SEND_MESSAGE = "com.example.mensajeautomatico.SEND_MESSAGE";
+    public static final String EXTRA_PHONE_NUMBER = "phone_number";
+    public static final String EXTRA_MESSAGE_TEXT = "message_text";
+    public static final String EXTRA_MESSAGE_ID = "message_id";
 
     // BroadcastReceiver para manejar datos del Worker.
     private final BroadcastReceiver messageReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            if (MessageWorker.ACTION_SEND_MESSAGE.equals(intent.getAction())) {
-                phoneNumber = intent.getStringExtra(MessageWorker.EXTRA_PHONE_NUMBER);
-                messageText = intent.getStringExtra(MessageWorker.EXTRA_MESSAGE_TEXT);
-                Log.d(TAG, "Mensaje recibido para el número: " + phoneNumber);
+            if (ACTION_SEND_MESSAGE.equals(intent.getAction())) {
+                phoneNumber = intent.getStringExtra(EXTRA_PHONE_NUMBER);
+                messageText = intent.getStringExtra(EXTRA_MESSAGE_TEXT);
+                messageId = intent.getIntExtra(EXTRA_MESSAGE_ID, -1);
+                Log.d(TAG, "Mensaje recibido para el número: " + phoneNumber + ", ID: " + messageId);
                 if (phoneNumber != null && messageText != null && !isMessageScheduled.get()) {
                     isMessageScheduled.set(true);
                     openWhatsApp();
@@ -74,27 +83,31 @@ public class MiServicioDeAccesibilidad extends AccessibilityService {
                         AccessibilityNodeInfo sendButton = sendButtons.get(0);
 
                         Log.d(TAG, "Caja de texto y botón de enviar encontrados.");
-                        // Llenar la caja de texto con el mensaje.
-                        if (messageBox.isEnabled()) {
-                            // En esta versión, no se usa performAction para pegar el texto,
-                            // ya que la URI de WhatsApp ya lo precarga.
-                            // Solo se busca y se hace clic en el botón de enviar.
+
+                        // Escribir el mensaje en el campo de texto
+                        Bundle arguments = new Bundle();
+                        arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, messageText);
+                        messageBox.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments);
+
+                        // Esperar un momento antes de enviar
+                        handler.postDelayed(() -> {
                             Log.d(TAG, "Botón de enviar encontrado. Enviando mensaje...");
                             sendButton.performAction(AccessibilityNodeInfo.ACTION_CLICK);
 
                             // Una vez enviado, restablece el estado del servicio.
                             isMessageScheduled.set(false);
                             Log.d(TAG, "Mensaje enviado. Servicio restablecido.");
-                        } else {
-                            Log.d(TAG, "La caja de texto no está habilitada.");
-                        }
+
+                            // Actualizar estado en base de datos
+                            updateMessageStatusInDatabase(true);
+                        }, 1000);
                     } else {
-                        Log.d(TAG, "Caja de texto del mensaje no encontrada. No estamos en la pantalla de chat.");
+                        Log.d(TAG, "Elementos de WhatsApp no encontrados.");
                     }
                 } else {
-                    Log.d(TAG, "Caja de texto del mensaje encontrada, pero el botón de enviar no. Esto es inesperado.");
+                    Log.d(TAG, "Nodo raíz no disponible.");
                 }
-            }, 1000); // Pequeño retraso para dar tiempo a que la UI se cargue.
+            }, 2000); // Mayor retraso para dar tiempo a que WhatsApp cargue completamente
         }
     }
 
@@ -155,7 +168,7 @@ public class MiServicioDeAccesibilidad extends AccessibilityService {
 
         // Registrar el BroadcastReceiver para recibir los mensajes del Worker.
         try {
-            IntentFilter filter = new IntentFilter(MessageWorker.ACTION_SEND_MESSAGE);
+            IntentFilter filter = new IntentFilter(ACTION_SEND_MESSAGE);
             LocalBroadcastManager.getInstance(this).registerReceiver(messageReceiver, filter);
             Log.d(TAG, "BroadcastReceiver registrado correctamente");
         } catch (Exception e) {
@@ -175,5 +188,27 @@ public class MiServicioDeAccesibilidad extends AccessibilityService {
         } catch (Exception e) {
             Log.e(TAG, "Error enviando broadcast: " + e.getMessage());
         }
+    }
+
+    private void updateMessageStatusInDatabase(boolean success) {
+        new Thread(() -> {
+            try {
+                AppDatabase db = AppDatabase.getDatabase(this);
+                if (messageId != -1) {
+                    MessageEntity message = db.messageDao().getMessageById(messageId);
+                    if (message != null) {
+                        message.status = success ? "Enviado" : "Error";
+                        db.messageDao().update(message);
+                        Log.d(TAG, "Estado del mensaje actualizado a: " + message.status);
+                    } else {
+                        Log.d(TAG, "No se encontró el mensaje con ID: " + messageId);
+                    }
+                } else {
+                    Log.d(TAG, "ID de mensaje no válido, no se puede actualizar la base de datos");
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error al actualizar base de datos: " + e.getMessage());
+            }
+        }).start();
     }
 }

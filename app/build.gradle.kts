@@ -5,6 +5,7 @@ plugins {
     id("com.google.gms.google-services")
 }
 
+
 android {
     namespace = "com.example.mensajeautomatico"
     // Usar la versión del SDK recomendada
@@ -73,4 +74,8 @@ dependencies {
 
     // CardView, necesario para el diseño de tu mensaje en el RecyclerView
     implementation("androidx.cardview:cardview:1.0.0")
+
+    implementation ("androidx.room:room-runtime:2.6.1")
+    annotationProcessor ("androidx.room:room-compiler:2.6.1")
+    implementation ("androidx.work:work-runtime:2.8.1")
 }
