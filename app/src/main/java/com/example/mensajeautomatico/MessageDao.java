@@ -10,7 +10,7 @@ import java.util.List;
 @Dao
 public interface MessageDao {
     @Insert
-    void insert(MessageEntity message);
+    long insert(MessageEntity message); // <- EL CAMBIO ESTÁ AQUÍ, AHORA DEVUELVE EL ID
 
     @Update
     void update(MessageEntity message);

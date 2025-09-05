@@ -53,49 +53,48 @@ public class ScheduleMessageActivity extends AppCompatActivity {
         btnSelectTime = findViewById(R.id.btn_select_time);
         tvSelectedDate = findViewById(R.id.tv_selected_date);
         tvSelectedTime = findViewById(R.id.tv_selected_time);
-        btnSchedule = findViewById(R.id.btn_schedule);
+        btnSchedule = findViewById(R.id.btn_schedule_message);
 
-        btnSelectDate.setOnClickListener(v -> showDatePickerDialog());
-        btnSelectTime.setOnClickListener(v -> showTimePickerDialog());
+        btnSelectDate.setOnClickListener(v -> showDatePicker());
+        btnSelectTime.setOnClickListener(v -> showTimePicker());
         btnSchedule.setOnClickListener(v -> scheduleMessage());
+
+        // Inicializar con la fecha y hora actuales
+        final Calendar c = Calendar.getInstance();
+        selectedYear = c.get(Calendar.YEAR);
+        selectedMonth = c.get(Calendar.MONTH);
+        selectedDay = c.get(Calendar.DAY_OF_MONTH);
+        selectedHour = c.get(Calendar.HOUR_OF_DAY);
+        selectedMinute = c.get(Calendar.MINUTE);
     }
 
-    private void showDatePickerDialog() {
-        final Calendar c = Calendar.getInstance();
-        int year = c.get(Calendar.YEAR);
-        int month = c.get(Calendar.MONTH);
-        int day = c.get(Calendar.DAY_OF_MONTH);
-
+    private void showDatePicker() {
         DatePickerDialog datePickerDialog = new DatePickerDialog(this,
-                (view, year1, monthOfYear, dayOfMonth) -> {
-                    selectedYear = year1;
+                (view, year, monthOfYear, dayOfMonth) -> {
+                    selectedYear = year;
                     selectedMonth = monthOfYear;
                     selectedDay = dayOfMonth;
-                    tvSelectedDate.setText("Fecha: " + dayOfMonth + "/" + (monthOfYear + 1) + "/" + year1);
-                }, year, month, day);
+                    tvSelectedDate.setText(String.format("%d-%02d-%02d", selectedYear, selectedMonth + 1, selectedDay));
+                }, selectedYear, selectedMonth, selectedDay);
+        datePickerDialog.getDatePicker().setMinDate(System.currentTimeMillis() - 1000); // Evitar fechas pasadas
         datePickerDialog.show();
     }
 
-    private void showTimePickerDialog() {
-        final Calendar c = Calendar.getInstance();
-        int hour = c.get(Calendar.HOUR_OF_DAY);
-        int minute = c.get(Calendar.MINUTE);
-
+    private void showTimePicker() {
         TimePickerDialog timePickerDialog = new TimePickerDialog(this,
-                (view, hourOfDay, minute1) -> {
+                (view, hourOfDay, minute) -> {
                     selectedHour = hourOfDay;
-                    selectedMinute = minute1;
-                    tvSelectedTime.setText("Hora: " + hourOfDay + ":" + String.format("%02d", minute1));
-                }, hour, minute, true);
+                    selectedMinute = minute;
+                    tvSelectedTime.setText(String.format("%02d:%02d", selectedHour, selectedMinute));
+                }, selectedHour, selectedMinute, true); // <-- ESTE CAMBIO VUELVE AL FORMATO 24H
         timePickerDialog.show();
     }
 
     private void scheduleMessage() {
-        String phoneNumber = etPhoneNumber.getText().toString();
-        String messageText = etMessageText.getText().toString();
-
+        String phoneNumber = etPhoneNumber.getText().toString().trim();
+        String messageText = etMessageText.getText().toString().trim();
         if (phoneNumber.isEmpty() || messageText.isEmpty()) {
-            Toast.makeText(this, "Por favor, completa todos los campos.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Por favor, ingresa un número y un mensaje.", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -110,11 +109,13 @@ public class ScheduleMessageActivity extends AppCompatActivity {
         MessageEntity message = new MessageEntity(phoneNumber, messageText, scheduledTimeMillis, "Programado");
 
         new Thread(() -> {
-            db.messageDao().insert(message);
+            // CAMBIO CLAVE: Capturar el ID devuelto por la inserción
+            long newId = db.messageDao().insert(message);
+
             Data inputData = new Data.Builder()
                     .putString(MessageWorker.EXTRA_PHONE_NUMBER, phoneNumber)
                     .putString(MessageWorker.EXTRA_MESSAGE_TEXT, messageText)
-                    .putInt(MessageWorker.EXTRA_MESSAGE_ID, (int) message.id)
+                    .putInt(MessageWorker.EXTRA_MESSAGE_ID, (int) newId) // <- USAR EL NUEVO ID
                     .build();
 
             OneTimeWorkRequest messageWork = new OneTimeWorkRequest.Builder(MessageWorker.class)

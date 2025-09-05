@@ -2,6 +2,7 @@ package com.example.mensajeautomatico;
 
 import android.content.Context;
 import android.content.Intent;
+import android.os.Build;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -36,13 +37,17 @@ public class MessageWorker extends Worker {
         }
 
         try {
-            // Enviar broadcast para que el servicio de accesibilidad maneje WhatsApp
             Intent intent = new Intent(ACTION_SEND_MESSAGE);
             intent.putExtra(EXTRA_PHONE_NUMBER, phoneNumber);
             intent.putExtra(EXTRA_MESSAGE_TEXT, messageText);
             intent.putExtra(EXTRA_MESSAGE_ID, messageId);
-            getApplicationContext().sendBroadcast(intent);
 
+            // FIX CLAVE: Añadir el paquete para que el broadcast sea explícito y seguro.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                intent.setPackage(getApplicationContext().getPackageName());
+            }
+
+            getApplicationContext().sendBroadcast(intent);
             Log.d(TAG, "Broadcast enviado para WhatsApp al número: " + phoneNumber);
             updateMessageStatus(messageId, "Programado");
 
@@ -63,6 +68,9 @@ public class MessageWorker extends Worker {
                     if (message != null) {
                         message.status = status;
                         db.messageDao().update(message);
+                        Log.d(TAG, "Estado actualizado a: " + status + " para ID: " + messageId);
+                    } else {
+                        Log.e(TAG, "Mensaje no encontrado para ID: " + messageId);
                     }
                 }).start();
             } catch (Exception e) {

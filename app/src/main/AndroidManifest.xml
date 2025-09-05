@@ -6,7 +6,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <!-- Para características de hardware opcionales -->
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
@@ -84,8 +84,33 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
 
     </application>
+
+    <!-- Consultas específicas para las aplicaciones con las que interactúa tu app -->
+    <queries>
+        <!-- WhatsApp -->
+        <package android:name="com.whatsapp" />
+
+        <!-- Si necesitas interactuar con otras apps de mensajería, agrégalas aquí -->
+        <!--
+        <package android:name="com.whatsapp.w4b" />  WhatsApp Business
+        <package android="com.instagram.android" />  Instagram
+        -->
+
+        <!-- Si necesitas detectar aplicaciones que pueden manejar ciertos intent -->
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="text/plain" />
+        </intent>
+
+        <!-- Si necesitas detectar aplicaciones que pueden manejar el esquema whatsapp:// -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="whatsapp" />
+        </intent>
+    </queries>
 </manifest>

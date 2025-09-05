@@ -5,19 +5,19 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.SharedPreferences;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
-import androidx.localbroadcastmanager.content.LocalBroadcastManager;
-
 import java.net.URLEncoder;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import androidx.annotation.NonNull;
+import android.annotation.SuppressLint;
 
 /**
  * Servicio de Accesibilidad para automatizar el envío de mensajes en WhatsApp.
@@ -30,15 +30,16 @@ public class MiServicioDeAccesibilidad extends AccessibilityService {
     private String messageText;
     private int messageId;
     private AtomicBoolean isMessageScheduled = new AtomicBoolean(false);
+    private AtomicBoolean isWhatsAppOpened = new AtomicBoolean(false);
     private Handler handler = new Handler(Looper.getMainLooper());
 
-    // Definir las constantes aquí si no están disponibles en MessageWorker
+    // Constantes para el Broadcast del MessageWorker
     public static final String ACTION_SEND_MESSAGE = "com.example.mensajeautomatico.SEND_MESSAGE";
     public static final String EXTRA_PHONE_NUMBER = "phone_number";
     public static final String EXTRA_MESSAGE_TEXT = "message_text";
     public static final String EXTRA_MESSAGE_ID = "message_id";
 
-    // BroadcastReceiver para manejar datos del Worker.
+    // Un BroadcastReceiver para recibir la señal del MessageWorker
     private final BroadcastReceiver messageReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -46,139 +47,233 @@ public class MiServicioDeAccesibilidad extends AccessibilityService {
                 phoneNumber = intent.getStringExtra(EXTRA_PHONE_NUMBER);
                 messageText = intent.getStringExtra(EXTRA_MESSAGE_TEXT);
                 messageId = intent.getIntExtra(EXTRA_MESSAGE_ID, -1);
-                Log.d(TAG, "Mensaje recibido para el número: " + phoneNumber + ", ID: " + messageId);
-                if (phoneNumber != null && messageText != null && !isMessageScheduled.get()) {
-                    isMessageScheduled.set(true);
-                    openWhatsApp();
-                }
+                isMessageScheduled.set(true);
+                Log.d(TAG, "Mensaje recibido del worker. Preparando envío a: " + phoneNumber);
+                openWhatsAppAndSendMessage();
             }
         }
     };
 
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
+    @Override
+    protected void onServiceConnected() {
+        super.onServiceConnected();
+        Log.d(TAG, "Servicio de Accesibilidad conectado.");
+
+        // FIX: Se agrega el flag de seguridad a partir de Android S (API 31)
+        IntentFilter filter = new IntentFilter(ACTION_SEND_MESSAGE);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            registerReceiver(messageReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(messageReceiver, filter);
+        }
+
+        sendAccessibilityStatusBroadcast(true);
+    }
+
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
+        if (!isMessageScheduled.get() || !isWhatsAppOpened.get()) {
+            return;
+        }
+
+        String packageName = event.getPackageName() != null ? event.getPackageName().toString() : "";
+        if ("com.whatsapp".equals(packageName) || "com.whatsapp.w4b".equals(packageName)) {
+            Log.d(TAG, "Evento de accesibilidad en WhatsApp detectado: " + event.getEventType());
+
+            // Esperar a que la ventana esté estable y luego procesar el mensaje
+            if (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+                handler.postDelayed(() -> {
+                    performActionForMessage();
+                }, 2000); // Esperar 2 segundos para que WhatsApp cargue completamente
+            }
+        }
+    }
+
+    private void openWhatsAppAndSendMessage() {
+        if (phoneNumber == null || messageText == null) {
+            Log.e(TAG, "Número de teléfono o mensaje nulos.");
+            updateMessageStatusInDatabase(false);
+            isMessageScheduled.set(false);
+            return;
+        }
+        try {
+            String whatsappUrl = "https://api.whatsapp.com/send?phone=" + phoneNumber + "&text=" + URLEncoder.encode(messageText, "UTF-8");
+            Intent whatsappIntent = new Intent(Intent.ACTION_VIEW);
+            whatsappIntent.setData(Uri.parse(whatsappUrl));
+            whatsappIntent.setPackage("com.whatsapp");
+            whatsappIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+            startActivity(whatsappIntent);
+            Log.d(TAG, "Abriendo WhatsApp con el chat de: " + phoneNumber);
+
+            // Marcar que WhatsApp se está abriendo
+            isWhatsAppOpened.set(true);
+
+            // Configurar un timeout por si WhatsApp no se abre correctamente
+            handler.postDelayed(() -> {
+                if (isMessageScheduled.get()) {
+                    Log.e(TAG, "Timeout: WhatsApp no se abrió correctamente.");
+                    updateMessageStatusInDatabase(false);
+                    isMessageScheduled.set(false);
+                    isWhatsAppOpened.set(false);
+                }
+            }, 10000); // 10 segundos de timeout
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error al abrir WhatsApp: " + e.getMessage());
+            updateMessageStatusInDatabase(false);
+            isMessageScheduled.set(false);
+            isWhatsAppOpened.set(false);
+        }
+    }
+
+    /**
+     * Esta función busca los nodos de la interfaz para escribir y enviar el mensaje.
+     */
+    private void performActionForMessage() {
         if (!isMessageScheduled.get()) {
             return;
         }
 
-        // Se detiene si el evento proviene de una aplicación que no es WhatsApp
-        if (event.getPackageName() != null && !event.getPackageName().toString().equals("com.whatsapp")) {
+        AccessibilityNodeInfo rootNode = getRootInActiveWindow();
+        if (rootNode == null) {
+            Log.d(TAG, "Nodo raíz nulo. Reintentando...");
+            handler.postDelayed(() -> performActionForMessage(), 1000);
             return;
         }
 
-        // Si la ventana ha cambiado (por ejemplo, ha entrado al chat), intenta enviar el mensaje.
-        if (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            Log.d(TAG, "Evento TYPE_WINDOW_STATE_CHANGED en WhatsApp.");
-            handler.postDelayed(() -> {
-                Log.d(TAG, "Buscando elementos de la UI.");
-                AccessibilityNodeInfo rootNode = getRootInActiveWindow();
-                if (rootNode != null) {
-                    // Busca el campo de texto del mensaje.
-                    List<AccessibilityNodeInfo> messageBoxes = rootNode.findAccessibilityNodeInfosByViewId("com.whatsapp:id/entry");
-                    // Busca el botón de enviar.
-                    List<AccessibilityNodeInfo> sendButtons = rootNode.findAccessibilityNodeInfosByViewId("com.whatsapp:id/send");
-
-                    if (!messageBoxes.isEmpty() && !sendButtons.isEmpty()) {
-                        AccessibilityNodeInfo messageBox = messageBoxes.get(0);
-                        AccessibilityNodeInfo sendButton = sendButtons.get(0);
-
-                        Log.d(TAG, "Caja de texto y botón de enviar encontrados.");
-
-                        // Escribir el mensaje en el campo de texto
-                        Bundle arguments = new Bundle();
-                        arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, messageText);
-                        messageBox.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments);
-
-                        // Esperar un momento antes de enviar
-                        handler.postDelayed(() -> {
-                            Log.d(TAG, "Botón de enviar encontrado. Enviando mensaje...");
-                            sendButton.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-
-                            // Una vez enviado, restablece el estado del servicio.
-                            isMessageScheduled.set(false);
-                            Log.d(TAG, "Mensaje enviado. Servicio restablecido.");
-
-                            // Actualizar estado en base de datos
-                            updateMessageStatusInDatabase(true);
-                        }, 1000);
-                    } else {
-                        Log.d(TAG, "Elementos de WhatsApp no encontrados.");
-                    }
-                } else {
-                    Log.d(TAG, "Nodo raíz no disponible.");
-                }
-            }, 2000); // Mayor retraso para dar tiempo a que WhatsApp cargue completamente
+        // 1. Encontrar el campo de texto del mensaje.
+        AccessibilityNodeInfo messageNode = findNodeByResourceId(rootNode, "com.whatsapp:id/entry");
+        if (messageNode == null) {
+            messageNode = findNodeByClassName(rootNode, "android.widget.EditText");
+            Log.d(TAG, "Buscando campo de texto por clase...");
         }
+
+        if (messageNode == null) {
+            Log.d(TAG, "Campo de texto no encontrado. Reintentando...");
+            handler.postDelayed(() -> performActionForMessage(), 1000);
+            return;
+        }
+
+        Log.d(TAG, "Campo de texto encontrado. Escribiendo mensaje...");
+        Bundle arguments = new Bundle();
+        arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, messageText);
+        messageNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments);
+
+        // Pequeña pausa después de escribir el texto
+        handler.postDelayed(() -> {
+            // 2. Encontrar y hacer clic en el botón de enviar.
+            AccessibilityNodeInfo sendButton = findNodeByResourceId(rootNode, "com.whatsapp:id/send");
+            if (sendButton == null) {
+                sendButton = findNodeByContentDescription(rootNode, "Enviar");
+                Log.d(TAG, "Buscando botón por descripción...");
+            }
+            if (sendButton == null) {
+                sendButton = findNodeByContentDescription(rootNode, "Send");
+                Log.d(TAG, "Buscando botón por descripción en inglés...");
+            }
+
+            if (sendButton != null && sendButton.isClickable()) {
+                Log.d(TAG, "Botón de enviar encontrado. Haciendo clic...");
+                sendButton.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+
+                // Éxito - mensaje enviado
+                isMessageScheduled.set(false);
+                isWhatsAppOpened.set(false);
+                updateMessageStatusInDatabase(true);
+
+                // Volver atrás después de enviar
+                handler.postDelayed(() -> performGlobalAction(GLOBAL_ACTION_BACK), 2000);
+            } else {
+                Log.e(TAG, "No se encontró el botón de enviar. Reintentando...");
+                handler.postDelayed(() -> performActionForMessage(), 1000);
+            }
+        }, 1000); // Esperar 1 segundo después de escribir el texto
     }
 
-    /**
-     * Abre la aplicación de WhatsApp con el número y mensaje precargados.
-     * Usamos una URI "whatsapp://send" que es más fiable para la automatización
-     * que la URI web "wa.me".
-     */
-    private void openWhatsApp() {
-        try {
-            Log.d(TAG, "Abriendo WhatsApp con el número: " + phoneNumber);
-            String url = "whatsapp://send?phone=" + phoneNumber + "&text=" + URLEncoder.encode(messageText, "UTF-8");
-            Intent whatsappIntent = new Intent(Intent.ACTION_VIEW);
-            whatsappIntent.setData(Uri.parse(url));
-            whatsappIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(whatsappIntent);
-        } catch (Exception e) {
-            Log.e(TAG, "Error al abrir WhatsApp: " + e.getMessage());
-            isMessageScheduled.set(false);
+    private AccessibilityNodeInfo findNodeByClassName(AccessibilityNodeInfo rootNode, String className) {
+        if (rootNode == null) return null;
+        return findNodeByViewTraversal(rootNode, node -> {
+            return node.getClassName() != null && node.getClassName().toString().equals(className);
+        });
+    }
+
+    private AccessibilityNodeInfo findNodeByResourceId(AccessibilityNodeInfo rootNode, String resourceId) {
+        if (rootNode == null) return null;
+        List<AccessibilityNodeInfo> nodes = rootNode.findAccessibilityNodeInfosByViewId(resourceId);
+        if (nodes != null && !nodes.isEmpty()) {
+            return nodes.get(0);
         }
+        return null;
+    }
+
+    private AccessibilityNodeInfo findNodeByContentDescription(AccessibilityNodeInfo rootNode, String description) {
+        if (rootNode == null) return null;
+        List<AccessibilityNodeInfo> nodes = rootNode.findAccessibilityNodeInfosByText(description);
+        if (nodes != null && !nodes.isEmpty()) {
+            for (AccessibilityNodeInfo node : nodes) {
+                if (node.getContentDescription() != null &&
+                        node.getContentDescription().toString().equalsIgnoreCase(description)) {
+                    return node;
+                }
+            }
+        }
+        return findNodeByViewTraversal(rootNode, node -> {
+            return node.getContentDescription() != null &&
+                    node.getContentDescription().toString().equalsIgnoreCase(description);
+        });
+    }
+
+    @FunctionalInterface
+    private interface NodeMatcher {
+        boolean matches(AccessibilityNodeInfo node);
+    }
+
+    private AccessibilityNodeInfo findNodeByViewTraversal(AccessibilityNodeInfo rootNode, NodeMatcher matcher) {
+        if (rootNode == null) {
+            return null;
+        }
+
+        if (matcher.matches(rootNode)) {
+            return rootNode;
+        }
+
+        for (int i = 0; i < rootNode.getChildCount(); i++) {
+            AccessibilityNodeInfo child = rootNode.getChild(i);
+            if (child == null) continue;
+            AccessibilityNodeInfo found = findNodeByViewTraversal(child, matcher);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
     }
 
     @Override
     public void onInterrupt() {
-        Log.w(TAG, "Servicio de accesibilidad interrumpido.");
+        Log.d(TAG, "Servicio de Accesibilidad interrumpido.");
     }
 
     @Override
-    public void onDestroy() {
-        super.onDestroy();
-        // Asegúrate de desregistrar el receptor al destruir el servicio.
-        try {
-            LocalBroadcastManager.getInstance(this).unregisterReceiver(messageReceiver);
-        } catch (Exception e) {
-            Log.e(TAG, "Error al desregistrar el receptor: " + e.getMessage());
-        }
-
-        // Guardar estado en SharedPreferences (servicio desactivado)
-        SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
-        prefs.edit().putBoolean("accessibility_enabled", false).apply();
-        Log.d(TAG, "Estado de accesibilidad guardado como false en SharedPreferences");
-
-        Log.d(TAG, "Servicio de accesibilidad destruido. BroadcastReceiver dado de baja.");
+    public void onRebind(Intent intent) {
+        super.onRebind(intent);
+        Log.d(TAG, "Servicio de Accesibilidad reconectado.");
     }
 
     @Override
-    protected void onServiceConnected() {
-        super.onServiceConnected();
-        Log.d(TAG, "Servicio de accesibilidad CONECTADO correctamente");
-
-        // Guardar estado en SharedPreferences (servicio activado)
-        SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
-        prefs.edit().putBoolean("accessibility_enabled", true).apply();
-        Log.d(TAG, "Estado de accesibilidad guardado como true en SharedPreferences");
-
-        // Enviar broadcast para notificar que el servicio está activo
-        sendAccessibilityStatusBroadcast(true);
-
-        // Registrar el BroadcastReceiver para recibir los mensajes del Worker.
-        try {
-            IntentFilter filter = new IntentFilter(ACTION_SEND_MESSAGE);
-            LocalBroadcastManager.getInstance(this).registerReceiver(messageReceiver, filter);
-            Log.d(TAG, "BroadcastReceiver registrado correctamente");
-        } catch (Exception e) {
-            Log.e(TAG, "Error al registrar BroadcastReceiver: " + e.getMessage());
+    public boolean onUnbind(Intent intent) {
+        Log.d(TAG, "Servicio de Accesibilidad desvinculado.");
+        if (messageReceiver != null) {
+            try {
+                unregisterReceiver(messageReceiver);
+            } catch (Exception e) {
+                Log.e(TAG, "Error al desregistrar el BroadcastReceiver: " + e.getMessage());
+            }
         }
+        sendAccessibilityStatusBroadcast(false);
+        return super.onUnbind(intent);
     }
 
-    /**
-     * Envía un broadcast para notificar el estado del servicio de accesibilidad.
-     */
     private void sendAccessibilityStatusBroadcast(boolean isEnabled) {
         try {
             Intent intent = new Intent("com.example.mensajeautomatico.ACCESSIBILITY_STATUS");
