@@ -2,7 +2,7 @@ package com.example.mensajeautomatico;
 
 import android.content.Context;
 import android.content.Intent;
-import android.os.Build;
+import android.content.SharedPreferences;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -37,15 +37,18 @@ public class MessageWorker extends Worker {
         }
 
         try {
+            // Verificar si el servicio de accesibilidad está activo
+            if (!isAccessibilityServiceEnabled()) {
+                Log.e(TAG, "El servicio de accesibilidad no está activo. Reintentando...");
+                // Reprogramar el trabajo para dentro de 5 segundos
+                return Result.retry();
+            }
+
             Intent intent = new Intent(ACTION_SEND_MESSAGE);
             intent.putExtra(EXTRA_PHONE_NUMBER, phoneNumber);
             intent.putExtra(EXTRA_MESSAGE_TEXT, messageText);
             intent.putExtra(EXTRA_MESSAGE_ID, messageId);
-
-            // FIX CLAVE: Añadir el paquete para que el broadcast sea explícito y seguro.
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                intent.setPackage(getApplicationContext().getPackageName());
-            }
+            intent.setPackage(getApplicationContext().getPackageName());
 
             getApplicationContext().sendBroadcast(intent);
             Log.d(TAG, "Broadcast enviado para WhatsApp al número: " + phoneNumber);
@@ -56,6 +59,16 @@ public class MessageWorker extends Worker {
             Log.e(TAG, "Error al programar mensaje para WhatsApp: " + e.getMessage());
             updateMessageStatus(messageId, "Error");
             return Result.failure();
+        }
+    }
+
+    private boolean isAccessibilityServiceEnabled() {
+        try {
+            SharedPreferences prefs = getApplicationContext().getSharedPreferences("app_prefs", Context.MODE_PRIVATE);
+            return prefs.getBoolean("accessibility_enabled", false);
+        } catch (Exception e) {
+            Log.e(TAG, "Error al verificar estado del servicio: " + e.getMessage());
+            return false;
         }
     }
 
